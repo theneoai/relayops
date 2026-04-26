@@ -1,0 +1,30 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "data-analyzer",
+    "version": "1.0.0",
+    "description": "数据分析助手：自动分析数据生成统计摘要和洞察",
+    "author": "platform",
+    "labels": ["数据", "分析"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.3
+    },
+    "system_prompt": "你是一名数据分析师。帮助用户理解数据，提取关键洞察。",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "analyze",
+          "type": "llm",
+          "name": "分析数据",
+          "prompt": "请分析以下数据，提供：\n1. 关键统计指标\n2. 趋势分析\n3. 异常点识别\n4. 可执行的洞察\n\n数据：\n{{input}}"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-requirement-analyst",
+    "version": "1.0.0",
+    "description": "自动驾驶需求分析Agent：将产品PRD转化为技术需求文档(TRD)，提取功能安全需求",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "requirements", "safety", "ISO26262"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.3,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是一名资深自动驾驶系统需求工程师，精通ISO 26262功能安全标准和ASPICE流程。\n\n你的任务是将产品需求文档(PRD)转化为技术需求文档(TRD)，并提取功能安全需求。\n\n你必须：\n1. 识别所有与功能安全相关的需求（ASIL等级）\n2. 提取感知、规划、控制、定位各模块的技术需求\n3. 定义验收标准和测试用例大纲\n4. 标记需求间的依赖关系\n5. 使用结构化格式输出\n\n输出语言：中文",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "parse_prd",
+          "type": "llm",
+          "name": "解析PRD",
+          "prompt": "请解析以下产品需求文档，提取关键信息：\n\n{{input}}\n\n请输出：\n1. 功能需求列表（编号、描述、优先级）\n2. 非功能需求（性能、安全、可靠性）\n3. 用户场景描述\n4. 边界条件和异常情况"
+        },
+        {
+          "id": "safety_analysis",
+          "type": "llm",
+          "name": "功能安全分析",
+          "prompt": "基于以下解析结果，进行ISO 26262功能安全分析：\n\n{{steps.parse_prd.output}}\n\n请输出：\n1. HARA分析（危害识别、风险评估）\n2. 每个功能的建议ASIL等级\n3. 安全机制需求\n4. 冗余和容错需求"
+        },
+        {
+          "id": "generate_trd",
+          "type": "llm",
+          "name": "生成TRD",
+          "prompt": "基于需求解析和功能安全分析，生成完整的技术需求文档(TRD)：\n\n需求解析：\n{{steps.parse_prd.output}}\n\n安全分析：\n{{steps.safety_analysis.output}}\n\n请输出标准TRD格式：\n- 文档编号和版本\n- 模块划分（感知/规划/控制/定位/系统）\n- 每个模块的详细技术需求\n- 接口定义\n- 验收标准\n- 测试用例大纲\n- 追溯矩阵（PRD需求→TRD需求→安全需求）"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Agent Platform",
+  "description": "Execute any agent registered on Agent Platform backend",
+  "color": "linear-gradient(135deg, rgb(31, 100, 242), rgb(26, 86, 219))",
+  "iconSrc": "https://raw.githubusercontent.com/FlowiseAI/Flowise/main/assets/FloWise%20Logo.png",
+  "schema": "const executeAgent = async (agentName, input) => {\n    const res = await fetch(`http://api-gateway:8000/api/v1/agents/${agentName}/execute`, {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ input })\n    });\n    const data = await res.json();\n    return data.response || JSON.stringify(data);\n};\n\nmodule.exports = { executeAgent };"
+}

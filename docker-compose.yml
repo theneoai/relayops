@@ -1,0 +1,362 @@
+x-common-variables: &common-variables
+  NODE_ENV: ${NODE_ENV:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  VERSION: ${VERSION:-0.1.0}
+  DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:changeme@postgres:5432/agent_platform}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  JWT_SECRET: ${JWT_SECRET:-changeme}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+  LITELLM_URL: ${LITELLM_URL:-http://litellm:4000}
+  LANGFUSE_BASEURL: ${LANGFUSE_BASEURL:-http://langfuse:3000}
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+  LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+
+services:
+  # ═══════════════════════════════════════════════════════════
+  # 基础设施层
+  # ═══════════════════════════════════════════════════════════
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: relayops-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-agent_platform}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: relayops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: relayops-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - agent-network
+    profiles:
+      - local-llm
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════
+  # 开源替代：LLM Gateway → LiteLLM Proxy
+  # ═══════════════════════════════════════════════════════════
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: relayops-litellm
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./config/litellm/config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: sk-relayops-master-key
+      LITELLM_SALT_KEY: sk-relayops-salt
+      STORE_MODEL_IN_DB: "false"
+    networks:
+      - agent-network
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveness')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════
+  # 开源新增：Langfuse LLM可观测性
+  # ═══════════════════════════════════════════════════════════
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: relayops-langfuse
+    ports:
+      - "3002:3000"
+    env_file:
+      - ./config/langfuse/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:changeme@postgres:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3002
+      HOSTNAME: 0.0.0.0
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_URL: ""
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/public/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════
+  # 开源新增：Windmill 工作流引擎
+  # ═══════════════════════════════════════════════════════════
+  windmill:
+    image: ghcr.io/windmill-labs/windmill:main
+    container_name: relayops-windmill
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:changeme@postgres:5432/windmill?schema=windmill
+      MODE: standalone
+      NUM_WORKERS: 2
+      WORKER_TAGS: typescript:2,python:1
+      RUST_LOG: info
+    volumes:
+      - windmill_data:/tmp/windmill
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════
+  # 业务服务层
+  # ═══════════════════════════════════════════════════════════
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: relayops-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *common-variables
+      PORT: 8000
+      MVP_SKIP_AUTH: "true"
+      DEVKIT_API_URL: ${DEVKIT_API_URL:-http://devkit-api:8080}
+      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://orchestrator:8081}
+      LLM_GATEWAY_URL: ${LITELLM_URL:-http://litellm:4000}
+      TOOL_SERVICE_URL: ${TOOL_SERVICE_URL:-http://tool-service:8083}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp-server:8084}
+    volumes:
+      - ./services/api-gateway/src:/app/src:ro
+      - ./services/api-gateway/public:/app/public:ro
+      - ./ui:/app/ui:ro
+    networks:
+      - agent-network
+    depends_on:
+      devkit-api:
+        condition: service_started
+      orchestrator:
+        condition: service_started
+      litellm:
+        condition: service_started
+      tool-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8000/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  devkit-api:
+    build:
+      context: ./services/devkit-api
+      dockerfile: Dockerfile
+    container_name: relayops-devkit-api
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *common-variables
+      PORT: 8080
+    volumes:
+      - ./services/devkit-api/src:/app/src:ro
+      - ./services/devkit-api/package.json:/app/package.json:ro
+      - ./examples/agents:/app/examples/agents:ro
+    command: ["sh", "-c", "npm install && npm start"]
+    networks:
+      - agent-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8080/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+    container_name: relayops-orchestrator
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *common-variables
+      PORT: 8081
+      LLM_GATEWAY_URL: ${LITELLM_URL:-http://litellm:4000}
+      TOOL_SERVICE_URL: ${TOOL_SERVICE_URL:-http://tool-service:8083}
+    volumes:
+      - ./services/orchestrator/src:/app/src:ro
+      - ./services/orchestrator/package.json:/app/package.json:ro
+    command: ["sh", "-c", "npm install && npm start"]
+    networks:
+      - agent-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      devkit-api:
+        condition: service_started
+      litellm:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8081/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  tool-service:
+    build:
+      context: ./services/tool-service
+      dockerfile: Dockerfile
+    container_name: relayops-tool-service
+    ports:
+      - "8083:8083"
+    environment:
+      <<: *common-variables
+      PORT: 8083
+    volumes:
+      - ./services/tool-service/src:/app/src:ro
+    networks:
+      - agent-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8083/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mcp-server:
+    build:
+      context: ./services/mcp-server
+      dockerfile: Dockerfile
+    container_name: relayops-mcp-server
+    ports:
+      - "8084:8084"
+    environment:
+      <<: *common-variables
+      PORT: 8084
+      DEVKIT_API_URL: ${DEVKIT_API_URL:-http://devkit-api:8080}
+      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://orchestrator:8081}
+      TOOL_SERVICE_URL: ${TOOL_SERVICE_URL:-http://tool-service:8083}
+    volumes:
+      - ./services/mcp-server/src:/app/src:ro
+    networks:
+      - agent-network
+    depends_on:
+      devkit-api:
+        condition: service_started
+      orchestrator:
+        condition: service_started
+      tool-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8084/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  flowise:
+    image: flowiseai/flowise:latest
+    container_name: relayops-flowise
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - FLOWISE_USERNAME=${FLOWISE_USERNAME:-admin}
+      - FLOWISE_PASSWORD=${FLOWISE_PASSWORD:-changeme}
+      - DATABASE_TYPE=sqlite
+      - APIKEY_PATH=/root/.flowise
+    volumes:
+      - flowise_data:/root/.flowise
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: relayops-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - agent-network
+    profiles:
+      - observability
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+  flowise_data:
+  grafana_data:
+  windmill_data:
+
+networks:
+  agent-network:
+    driver: bridge
+    name: agent-network

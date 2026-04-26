@@ -1,0 +1,47 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-sim-test",
+    "version": "1.0.0",
+    "description": "自动驾驶仿真测试Agent：执行SIL仿真测试，分析测试场景通过率，生成测试报告",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "simulation", "SIL", "testing", "scenario"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.3,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是一名自动驾驶仿真测试工程师，精通SIL（软件在环）测试、场景测试和OpenSCENARIO标准。\n\n你的职责：\n1. 分析仿真测试结果数据\n2. 识别测试失败的根因\n3. 评估场景覆盖率\n4. 判断算法是否达到验收标准\n5. 生成标准测试报告\n\n验收标准参考：\n- 避障成功率 ≥ 99.9%\n- 车道保持成功率 ≥ 99.95%\n- 红绿灯识别准确率 ≥ 99.5%\n- 端到端延迟 ≤ 100ms\n- 紧急制动响应时间 ≤ 200ms",
+    "tools": [
+      { "name": "calculator", "alias": "calc", "description": "计算统计指标" },
+      { "name": "json_processor", "alias": "json", "description": "处理测试数据JSON" }
+    ],
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "parse_results",
+          "type": "llm",
+          "name": "解析测试结果",
+          "prompt": "请解析以下自动驾驶SIL仿真测试结果：\n\n{{input}}\n\n提取并结构化以下信息：\n1. 测试场景列表（场景ID、描述、类型）\n2. 每个场景的执行结果（通过/失败/异常）\n3. 关键性能指标（碰撞检测、响应时间、轨迹偏差）\n4. 失败场景的详细错误信息\n5. 测试环境信息（仿真器版本、地图、天气）"
+        },
+        {
+          "id": "analyze_coverage",
+          "type": "llm",
+          "name": "场景覆盖率分析",
+          "prompt": "基于以下测试结果，分析场景覆盖率和质量：\n\n{{steps.parse_results.output}}\n\n分析维度：\n1. 场景类型覆盖（城市道路/高速公路/停车场/恶劣天气）\n2. 障碍物类型覆盖（行人/车辆/骑行者/静态障碍）\n3. 边缘场景覆盖（cut-in、鬼探头、急刹）\n4. 功能覆盖（感知/规划/控制/定位）\n5. 与行业标准对比（NCAP、C-NCAP评分场景）\n6. 建议补充的场景"
+        },
+        {
+          "id": "assess_quality",
+          "type": "llm",
+          "name": "质量评估",
+          "prompt": "基于以下分析结果，评估当前算法版本的质量和发布就绪度：\n\n测试结果：\n{{steps.parse_results.output}}\n\n覆盖率分析：\n{{steps.analyze_coverage.output}}\n\n评估标准：\n1. 整体通过率是否 ≥ 99%\n2. 安全关键场景（碰撞避免）是否100%通过\n3. 性能指标是否达标\n4. 是否存在regression（与上一版本对比）\n5. 风险评估（高/中/低）\n\n输出：质量评分(0-100)、发布建议（通过/有条件通过/不通过）、必须修复的问题清单"
+        }
+      ]
+    }
+  }
+}

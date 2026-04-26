@@ -1,0 +1,51 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "customer-service",
+    "version": "1.0.0",
+    "description": "智能客服Agent，处理常见客户咨询，支持退款、订单查询、产品咨询",
+    "author": "platform-team",
+    "labels": ["customer-service", "chinese", "automated"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.7,
+      "max_tokens": 1024
+    },
+    "system_prompt": "你是一名专业的智能客服助手。你的任务是帮助客户解决问题。\n\n工作流程：\n1. 理解客户意图（退款/订单查询/产品咨询/投诉）\n2. 调用相关工具获取信息\n3. 生成礼貌、专业的回复\n\n规则：\n- 使用中文回复\n- 涉及退款必须查询退款政策\n- 涉及订单必须验证订单号\n- 如果无法解决，礼貌转人工\n",
+    "tools": [
+      { "name": "weather_query", "alias": "weather", "description": "查询天气" },
+      { "name": "order_query", "alias": "order", "description": "查询订单" }
+    ],
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "understand_intent",
+          "type": "llm",
+          "name": "理解客户意图",
+          "prompt": "分析以下客户消息，判断意图类别：\n可选类别：refund（退款）、order_query（订单查询）、product_inquiry（产品咨询）、complaint（投诉）、other（其他）\n客户消息：{{input}}\n只返回JSON格式：{\"intent\": \"类别\", \"confidence\": 0-1}"
+        },
+        {
+          "id": "query_order",
+          "type": "tool",
+          "name": "查询订单信息",
+          "tool": "order_query",
+          "inputs": { "order_id": "ORD-001" }
+        },
+        {
+          "id": "generate_response",
+          "type": "llm",
+          "name": "生成回复",
+          "prompt": "你是客服助手。\n客户原始消息：{{input}}\n意图分析结果：{{steps.understand_intent.output}}\n订单查询结果：{{steps.query_order.output}}\n请生成专业、礼貌的回复。"
+        }
+      ]
+    },
+    "guardrails": [
+      { "type": "content_filter", "blocked_words": ["政治", "暴力", "色情"] }
+    ]
+  }
+}

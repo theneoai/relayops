@@ -1,0 +1,61 @@
+# LiteLLM Proxy 配置文件
+# 统一LLM API网关，支持多模型路由、fallback、负载均衡
+
+model_list:
+  # Ollama 本地模型（主模型）
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: ollama/llama3.2
+      api_base: http://host.docker.internal:11434
+      timeout: 30
+
+  # 更多Ollama模型配置
+  - model_name: llama3.2
+    litellm_params:
+      model: ollama/llama3.2
+      api_base: http://host.docker.internal:11434
+      timeout: 30
+
+  # 兜底mock模型（当Ollama不可用时返回mock响应）
+  - model_name: echo-model
+    litellm_params:
+      model: openai/gpt-3.5-turbo
+      api_key: fake-key
+      mock_response: "Mock fallback: Ollama is currently unavailable. Please start Ollama with 'make up-all' or configure an external LLM provider."
+
+# Fallback 配置：当主模型失败时自动降级
+litellm_settings:
+  fallbacks:
+    - gpt-4o-mini:
+        - llama3.2
+        - echo-model
+    - llama3.2:
+        - echo-model
+  
+  # 内容策略fallback
+  content_policy_fallbacks: []
+  
+  # 上下文窗口fallback
+  context_window_fallbacks: []
+  
+  # 默认设置
+  drop_params: true
+  modify_params: true
+
+# 路由设置
+router_settings:
+  routing_strategy: simple-shuffle
+  allowed_fails: 3
+  cooldown_time: 60
+
+# 通用设置
+general_settings:
+  master_key: sk-relayops-master-key
+  proxy_batch_write_at: 10
+  #  forwarded_client_headers_to_llm_api: true
+
+# 日志与观测性
+callback_settings: []
+
+# 虚拟密钥管理（MVP简化）
+# 生产环境应配置数据库后端存储

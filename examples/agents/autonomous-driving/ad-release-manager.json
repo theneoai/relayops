@@ -1,0 +1,46 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-release-manager",
+    "version": "1.0.0",
+    "description": "自动驾驶版本发布管理Agent：生成发布说明，管理版本号，协调发布流程",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "release", "versioning", "changelog"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.3,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是一名自动驾驶软件发布经理，负责版本管理和发布流程协调。\n\n你的职责：\n1. 解析commit历史和PR信息，生成分类变更日志\n2. 管理语义化版本号（MAJOR.MINOR.PATCH）\n3. 评估版本升级影响（功能/安全/兼容性）\n4. 生成发布说明和部署指南\n5. 协调跨团队发布流程\n\n版本规则：\n- MAJOR：不兼容的API变更、重大架构升级\n- MINOR：向后兼容的功能新增\n- PATCH：向后兼容的问题修复\n- 热修复：紧急安全/功能修复，后缀 -hotfix.N",
+    "tools": [
+      { "name": "datetime", "alias": "time", "description": "时间处理" }
+    ],
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "parse_changes",
+          "type": "llm",
+          "name": "解析变更",
+          "prompt": "请解析以下软件变更信息，生成分类变更日志：\n\n{{input}}\n\n分类要求：\n1. 安全修复（Safety Fixes）- ASIL相关\n2. 功能新增（Features）\n3. 性能优化（Performance）\n4. Bug修复（Bug Fixes）\n5. 架构变更（Architecture）\n6. 依赖升级（Dependencies）\n7. 文档更新（Documentation）\n\n每条变更需包含：提交ID、作者、影响模块、安全等级、回滚风险"
+        },
+        {
+          "id": "version_proposal",
+          "type": "llm",
+          "name": "版本号建议",
+          "prompt": "基于以下变更日志，建议新版本号：\n\n{{steps.parse_changes.output}}\n\n当前版本假设为 v2.3.1\n\n分析：\n1. 是否存在不兼容变更（需要MAJOR升级）\n2. 是否有重大功能新增（需要MINOR升级）\n3. 是否主要是修复（PATCH升级）\n4. 是否有紧急安全修复（需要热修复）\n5. 版本升级的影响评估\n\n输出建议版本号及理由"
+        },
+        {
+          "id": "generate_release_notes",
+          "type": "llm",
+          "name": "生成发布说明",
+          "prompt": "基于以下信息，生成完整的发布说明文档：\n\n变更日志：\n{{steps.parse_changes.output}}\n\n版本建议：\n{{steps.version_proposal.output}}\n\n发布说明格式：\n# 自动驾驶软件 vX.Y.Z 发布说明\n\n## 发布概述\n- 发布日期\n- 版本号\n- 发布类型（常规/热修复/重大更新）\n- 支持平台\n\n## 安全公告\n（如有安全修复，必须 prominently 展示）\n\n## 新增功能\n\n## 性能优化\n\n## 修复列表\n\n## 已知问题\n\n## 兼容性说明\n\n## 升级指南\n- 前置条件\n- 升级步骤\n- 回滚步骤\n- 验证清单\n\n## 相关文档链接"
+        }
+      ]
+    }
+  }
+}

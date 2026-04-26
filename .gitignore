@@ -1,0 +1,29 @@
+# Environment variables
+.env
+.env.local
+
+# Dependencies
+**/node_modules/
+
+# Secrets
+secrets/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+.docker/
+
+# Backup files
+*.bak

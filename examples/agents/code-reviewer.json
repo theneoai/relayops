@@ -1,0 +1,30 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "code-reviewer",
+    "version": "1.0.0",
+    "description": "代码审查助手：自动审查代码发现Bug和性能问题",
+    "author": "platform",
+    "labels": ["开发", "代码"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.2
+    },
+    "system_prompt": "你是一名资深代码审查专家。审查代码时关注：Bug、性能、安全、可读性、最佳实践。",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "review",
+          "type": "llm",
+          "name": "审查代码",
+          "prompt": "请审查以下代码，从以下维度分析：\n1. 潜在Bug\n2. 性能问题\n3. 安全隐患\n4. 可读性建议\n5. 最佳实践\n\n代码：\n```\n{{input}}\n```\n\n请用中文回复，按严重程度排序。"
+        }
+      ]
+    }
+  }
+}

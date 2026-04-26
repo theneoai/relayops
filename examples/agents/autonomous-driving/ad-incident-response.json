@@ -1,0 +1,63 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-incident-response",
+    "version": "1.0.0",
+    "description": "自动驾驶故障响应Agent：自动处理线上告警，执行诊断流程，生成根因分析报告",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "incident", "SRE", "oncall", "root-cause"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.2,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是一名自动驾驶SRE（站点可靠性工程师），负责线上故障的自动响应和诊断。\n\n你的职责：\n1. 接收告警通知，判断严重程度和影响范围\n2. 执行标准化诊断流程\n3. 收集相关日志和指标\n4. 尝试自动修复（重启、回滚、限流）\n5. 生成根因分析报告（RCA）\n6. 通知相关团队并创建跟踪工单\n\n严重等级：\n- P0：车辆安全受威胁，需立即人工介入\n- P1：核心功能不可用，大量车辆受影响\n- P2：部分功能降级，有限车辆受影响\n- P3：轻微问题，可延后处理\n\n自动修复策略：\n- 服务无响应 → 尝试重启\n- 新版本异常 → 自动回滚上一版本\n- 资源耗尽 → 自动扩容/清理",
+    "tools": [
+      { "name": "http_request", "alias": "http", "description": "调用服务API诊断" },
+      { "name": "datetime", "alias": "time", "description": "时间戳处理" }
+    ],
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "triage",
+          "type": "llm",
+          "name": "告警分级",
+          "prompt": "请分析以下自动驾驶系统告警，进行分级和初步诊断：\n\n{{input}}\n\n分析要求：\n1. 告警来源（感知/规划/控制/定位/通信/基础设施）\n2. 严重等级判定（P0/P1/P2/P3）\n3. 影响范围（车辆数、地理区域、功能模块）\n4. 是否与近期发布相关\n5. 是否为已知问题（匹配历史故障库）\n6. 是否需要立即人工介入\n\n输出：分级结果、影响评估、建议响应时间"
+        },
+        {
+          "id": "auto_remediation",
+          "type": "condition",
+          "name": "自动修复判断",
+          "condition": "{{steps.triage.output}} contains 'P1' or contains 'P2'",
+          "then": [
+            {
+              "id": "execute_fix",
+              "type": "llm",
+              "name": "执行修复方案",
+              "prompt": "告警等级为P1/P2，请制定并记录自动修复方案：\n\n分级结果：\n{{steps.triage.output}}\n\n修复方案选择：\n1. 如果是服务无响应 → 建议重启服务\n2. 如果是新版本异常 → 建议回滚到上一稳定版本\n3. 如果是资源耗尽 → 建议扩容或清理缓存\n4. 如果是网络分区 → 建议切换备用链路\n\n输出：选择的修复方案、执行步骤、预期效果、回滚计划"
+            }
+          ],
+          "else": [
+            {
+              "id": "escalation",
+              "type": "llm",
+              "name": "升级通知",
+              "prompt": "告警为P0级别或需要人工介入，请生成紧急升级通知：\n\n分级结果：\n{{steps.triage.output}}\n\n通知内容：\n1. 紧急事件摘要\n2. 当前状态和影响\n3. 已尝试的自动措施\n4. 需要人工执行的操作\n5. 相关团队和联系人\n6. 事件跟踪编号"
+            }
+          ]
+        },
+        {
+          "id": "rca_report",
+          "type": "llm",
+          "name": "根因分析",
+          "prompt": "基于以下事件处理过程，生成根因分析报告（RCA）：\n\n分级结果：\n{{steps.triage.output}}\n\n处理过程：\n{{steps.auto_remediation.output}}\n\nRCA报告格式：\n# 事件根因分析报告\n\n## 事件概述\n- 事件编号\n- 发生时间\n- 恢复时间\n- MTTR\n\n## 影响范围\n\n## 时间线\n（分钟级的事件发展时间线）\n\n## 根因分析\n（5 Whys方法）\n\n## 应对措施\n（已执行的）\n\n## 预防措施\n（为避免再次发生）\n\n## 行动项\n（责任人、截止日期、状态）"
+        }
+      ]
+    }
+  }
+}

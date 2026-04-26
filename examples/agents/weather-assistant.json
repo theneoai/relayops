@@ -1,0 +1,39 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "weather-assistant",
+    "version": "1.0.0",
+    "description": "天气查询助手：查询任意城市天气并生成播报",
+    "author": "platform",
+    "labels": ["工具", "查询"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.5
+    },
+    "system_prompt": "你是一个天气助手。根据用户查询的城市，调用天气工具获取信息，然后用友好的语气告诉用户。",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "get_weather",
+          "type": "tool",
+          "name": "获取天气",
+          "tool": "weather_query",
+          "inputs": {
+            "city": "{{input}}"
+          }
+        },
+        {
+          "id": "reply",
+          "type": "llm",
+          "name": "生成播报",
+          "prompt": "用户查询城市：{{input}}\n天气数据：{{steps.get_weather.output}}\n请生成友好的天气播报。"
+        }
+      ]
+    }
+  }
+}

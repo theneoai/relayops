@@ -1,0 +1,64 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-ci-cd",
+    "version": "1.0.0",
+    "description": "自动驾驶CI/CD编排Agent：自动构建、单元测试、SIL集成测试、OTA部署流水线",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "CI/CD", "build", "deploy", "OTA"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.2,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是一名自动驾驶DevOps工程师，负责CI/CD流水线的编排和执行。\n\n你的职责：\n1. 解析构建请求，确定构建参数和依赖\n2. 编排构建、测试、部署阶段\n3. 分析构建和测试结果\n4. 决定是否可以进入下一阶段\n5. 生成部署包和OTA升级包\n6. 管理金丝雀发布和回滚\n\n流水线阶段：\nStage 1: 代码拉取 → 依赖检查 → 代码规范检查\nStage 2: 编译构建 → 静态分析 → 单元测试\nStage 3: SIL集成测试 → 场景回归测试 → 性能基准测试\nStage 4: 安全审查 → 代码签名 → 生成OTA包\nStage 5: 金丝雀部署 → 监控验证 → 全量发布/回滚",
+    "tools": [
+      { "name": "http_request", "alias": "http", "description": "调用CI服务API" },
+      { "name": "calculator", "alias": "calc", "description": "计算构建指标" },
+      { "name": "datetime", "alias": "time", "description": "时间管理" }
+    ],
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "parse_request",
+          "type": "llm",
+          "name": "解析构建请求",
+          "prompt": "请解析以下CI/CD构建请求，提取关键信息：\n\n{{input}}\n\n提取：\n1. 代码分支和commit hash\n2. 目标版本号\n3. 构建类型（完整/增量/热修复）\n4. 目标平台（x86_64/aarch64/车端SOC）\n5. 是否需要跳过某些阶段\n6. 发布策略（金丝雀/全量/灰度）\n7. 紧急程度和审批信息"
+        },
+        {
+          "id": "build_analysis",
+          "type": "llm",
+          "name": "构建结果分析",
+          "prompt": "基于以下构建流水线的各阶段结果，分析当前状态：\n\n{{input}}\n\n分析：\n1. 各阶段状态（成功/失败/跳过）\n2. 编译时间和性能指标\n3. 测试通过率\n4. 静态分析发现的问题\n5. 与基线的对比（编译时间、二进制大小、测试覆盖率）\n6. 是否满足进入下一阶段的条件\n\n输出：阶段状态表、关键指标、Go/No-Go决策"
+        },
+        {
+          "id": "deploy_decision",
+          "type": "condition",
+          "name": "部署决策",
+          "condition": "{{steps.build_analysis.output}} contains 'Go' and not contains 'blocker'",
+          "then": [
+            {
+              "id": "generate_ota",
+              "type": "llm",
+              "name": "生成OTA包",
+              "prompt": "构建成功，请生成OTA部署方案：\n\n构建结果：\n{{steps.build_analysis.output}}\n\n生成内容：\n1. OTA包信息（版本号、大小、签名、哈希）\n2. 部署策略（金丝雀车辆列表、批次、时间窗口）\n3. 回滚策略（触发条件、回滚步骤）\n4. 监控指标（成功率、异常率、性能退化）\n5. 发布检查清单"
+            }
+          ],
+          "else": [
+            {
+              "id": "failure_report",
+              "type": "llm",
+              "name": "失败报告",
+              "prompt": "构建失败，请生成失败分析报告：\n\n构建结果：\n{{steps.build_analysis.output}}\n\n报告内容：\n1. 失败阶段和根因\n2. 影响范围评估\n3. 修复建议\n4. 是否需要回滚上一版本\n5. 通知相关团队成员"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

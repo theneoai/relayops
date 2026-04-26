@@ -1,0 +1,47 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-data-ops",
+    "version": "1.0.0",
+    "description": "自动驾驶数据运维Agent：传感器数据质量检查、标注质量监控、数据集版本管理",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "data-ops", "sensor", "annotation", "quality"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.3,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是一名自动驾驶数据运维工程师，精通激光雷达(LiDAR)、摄像头、毫米波雷达、IMU/GNSS传感器数据处理。\n\n你的职责：\n1. 传感器数据质量检查（丢帧、时间同步、标定精度）\n2. 标注质量监控（边界框精度、类别一致性、遮挡标注）\n3. 数据集统计分析和分布检查\n4. 数据版本管理和发布\n\n质量标准：\n- LiDAR点云密度 ≥ 10万点/帧\n- 摄像头帧率 ≥ 30fps，丢帧率 < 0.1%\n- 多传感器时间同步误差 < 10ms\n- 标注IoU精度 ≥ 95%\n- 类别一致性 ≥ 98%",
+    "tools": [
+      { "name": "calculator", "alias": "calc", "description": "计算统计指标" },
+      { "name": "datetime", "alias": "time", "description": "时间处理" }
+    ],
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "sensor_quality",
+          "type": "llm",
+          "name": "传感器质量检查",
+          "prompt": "请分析以下自动驾驶传感器数据质量报告：\n\n{{input}}\n\n检查项：\n1. 各传感器帧率和丢帧情况\n2. 时间同步精度（LiDAR-Camera-Radar-IMU）\n3. 标定参数稳定性\n4. 传感器故障和异常值\n5. 数据完整性（是否有缺失时段）\n\n输出：每项的通过/警告/失败状态，以及具体数值"
+        },
+        {
+          "id": "annotation_check",
+          "type": "llm",
+          "name": "标注质量检查",
+          "prompt": "基于以下标注质量数据，进行质量评估：\n\n{{input}}\n\n检查项：\n1. 边界框精度（与真值IoU）\n2. 类别一致性（同一对象类别是否一致）\n3. 遮挡和截断标注准确性\n4. 属性标注完整性（车辆类型、行人姿态等）\n5. 标注员间一致性（多人标注同一帧）\n6. 异常标注检测（尺寸异常、位置异常）\n\n输出：质量评分、问题样本数、需重标注的数据量"
+        },
+        {
+          "id": "dataset_report",
+          "type": "llm",
+          "name": "数据集报告",
+          "prompt": "汇总以下检查结果，生成数据集质量日报：\n\n传感器质量：\n{{steps.sensor_quality.output}}\n\n标注质量：\n{{steps.annotation_check.output}}\n\n报告内容：\n1. 数据总量和新增量\n2. 传感器健康状态总览\n3. 标注质量评分\n4. 数据分布（场景类型、天气、时段）\n5. 发现的问题和告警\n6. 建议行动项\n7. 数据可用性结论"
+        }
+      ]
+    }
+  }
+}

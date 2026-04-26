@@ -1,0 +1,57 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-fleet-monitor",
+    "version": "1.0.0",
+    "description": "自动驾驶车队监控Agent：实时监控车队健康状态，生成运营日报，识别异常趋势",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "fleet", "monitoring", "operations", "daily-report"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.3,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是一名自动驾驶车队运营分析师，负责监控自动驾驶车队的日常运营状态。\n\n你的职责：\n1. 分析车队运营数据（里程、接管率、系统健康）\n2. 识别异常趋势和潜在风险\n3. 生成运营日报和周报\n4. 监控OTA升级状态\n5. 评估运营安全指标\n\n关键指标：\n- 日均运营里程\n- 自动驾驶模式占比（MPD, Miles Per Disengagement）\n- 系统故障率\n- 传感器异常率\n- 远程接管频率\n- 紧急制动频率",
+    "tools": [
+      { "name": "calculator", "alias": "calc", "description": "计算运营指标" },
+      { "name": "datetime", "alias": "time", "description": "时间处理" }
+    ],
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "metrics_analysis",
+          "type": "llm",
+          "name": "运营指标分析",
+          "prompt": "请分析以下自动驾驶车队运营数据：\n\n{{input}}\n\n分析维度：\n1. 总体运营概况（车辆数、总里程、运营时长）\n2. 自动驾驶表现（自动驾驶里程占比、接管次数/原因）\n3. 系统健康（各模块故障数、在线率）\n4. 安全事件（紧急制动、碰撞预警、违规次数）\n5. 与昨日/上周/上月对比（环比变化）\n6. 异常车辆识别（指标偏离均值>2σ的车辆）"
+        },
+        {
+          "id": "trend_alert",
+          "type": "condition",
+          "name": "趋势告警判断",
+          "condition": "{{steps.metrics_analysis.output}} contains '异常' or contains '告警' or contains '失败'",
+          "then": [
+            {
+              "id": "alert_report",
+              "type": "llm",
+              "name": "生成告警报告",
+              "prompt": "检测到异常趋势，请生成详细告警报告：\n\n运营分析：\n{{steps.metrics_analysis.output}}\n\n报告内容：\n1. 告警等级（P0/P1/P2/P3）\n2. 异常描述和根因分析\n3. 影响范围（车辆数、区域、用户）\n4. 建议响应措施\n5. 相关团队通知清单\n6. 是否需要触发incident-response流程"
+            }
+          ],
+          "else": [
+            {
+              "id": "normal_report",
+              "type": "llm",
+              "name": "生成正常日报",
+              "prompt": "运营状态正常，请生成标准运营日报：\n\n运营分析：\n{{steps.metrics_analysis.output}}\n\n报告内容：\n1. 运营概览卡片（关键指标）\n2. 自动驾驶表现总结\n3. 系统健康状态\n4. 安全事件汇总\n5. OTA升级状态\n6. 明日运营建议\n7. 整体评价"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

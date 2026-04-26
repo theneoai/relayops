@@ -1,0 +1,30 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "email-writer",
+    "version": "1.0.0",
+    "description": "邮件撰写助手：根据主题自动生成正式商务邮件",
+    "author": "platform",
+    "labels": ["写作", "办公"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.7
+    },
+    "system_prompt": "你是一名专业的商务邮件撰写专家。根据用户提供的信息，生成正式、得体的商务邮件。",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "write_email",
+          "type": "llm",
+          "name": "撰写邮件",
+          "prompt": "请根据以下信息撰写一封商务邮件：\n{{input}}\n\n要求：\n1. 格式规范（称谓、正文、祝颂语、署名）\n2. 语气正式但友好\n3. 简洁明了，不啰嗦"
+        }
+      ]
+    }
+  }
+}

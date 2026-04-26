@@ -1,0 +1,59 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-dev-workflow",
+    "version": "1.0.0",
+    "description": "自动驾驶研发主工作流Agent：编排需求→开发→测试→发布的完整迭代流程",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "workflow", "orchestration", "devops"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.3,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是自动驾驶研发流程编排器，负责协调完整的软件迭代生命周期。\n\n标准研发流程：\n1. 需求分析 → 生成TRD\n2. 代码开发 → 提交代码\n3. 安全审查 → ad-code-reviewer检查\n4. 仿真测试 → ad-sim-test验证\n5. CI/CD构建 → ad-ci-cd编排\n6. 版本发布 → ad-release-manager管理\n\n你负责：\n- 解析用户输入的研发任务\n- 确定需要触发的子流程\n- 汇总各阶段结果\n- 判断整体流程状态\n- 生成研发迭代报告",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "task_parse",
+          "type": "llm",
+          "name": "任务解析",
+          "prompt": "请解析以下自动驾驶研发任务，确定流程阶段：\n\n{{input}}\n\n分析：\n1. 任务类型（新功能开发/缺陷修复/性能优化/安全更新）\n2. 涉及模块（感知/规划/控制/定位/系统）\n3. 是否需要需求分析\n4. 是否需要安全审查\n5. 是否需要仿真测试\n6. 是否需要立即发布\n7. 预估工作量\n\n输出：流程阶段清单和依赖关系"
+        },
+        {
+          "id": "stage_check",
+          "type": "condition",
+          "name": "阶段检查",
+          "condition": "{{steps.task_parse.output}} contains '安全' or contains 'safety'",
+          "then": [
+            {
+              "id": "safety_notice",
+              "type": "llm",
+              "name": "安全流程提醒",
+              "prompt": "该任务涉及安全相关变更，请生成安全流程提醒：\n\n任务解析：\n{{steps.task_parse.output}}\n\n提醒内容：\n1. 必须完成功能安全审查（ad-code-reviewer）\n2. 必须更新HARA分析文档\n3. 必须执行完整的SIL回归测试\n4. 需要安全团队审批\n5. 版本号必须体现安全修复\n6. 发布说明必须包含安全公告"
+            }
+          ],
+          "else": [
+            {
+              "id": "normal_notice",
+              "type": "llm",
+              "name": "标准流程提醒",
+              "prompt": "该任务为标准开发任务，请生成标准流程提醒：\n\n任务解析：\n{{steps.task_parse.output}}\n\n提醒内容：\n1. 完成代码开发并提交PR\n2. 通过自动化代码检查\n3. 执行相关模块的仿真测试\n4. 通过CI/CD流水线\n5. 生成变更日志"
+            }
+          ]
+        },
+        {
+          "id": "summary",
+          "type": "llm",
+          "name": "流程摘要",
+          "prompt": "基于以下分析，生成研发任务执行摘要：\n\n任务解析：\n{{steps.task_parse.output}}\n\n流程提醒：\n{{steps.stage_check.output}}\n\n摘要内容：\n1. 任务编号和标题\n2. 执行流程图（阶段和状态）\n3. 涉及的Agent列表\n4. 关键检查点\n5. 预期交付物\n6. 风险提示\n7. 下一步行动"
+        }
+      ]
+    }
+  }
+}

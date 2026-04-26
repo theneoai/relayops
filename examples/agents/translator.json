@@ -1,0 +1,30 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "translator",
+    "version": "1.0.0",
+    "description": "智能翻译助手：多语言互译保持专业术语准确",
+    "author": "platform",
+    "labels": ["翻译", "语言"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.2
+    },
+    "system_prompt": "你是一名专业翻译。准确翻译用户输入的内容，保持原文语气和专业术语。",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "translate",
+          "type": "llm",
+          "name": "翻译",
+          "prompt": "请将以下内容翻译成中文（如果是中文则翻译成英文）：\n\n{{input}}\n\n要求：\n1. 准确传达原意\n2. 保持专业术语准确\n3. 语言自然流畅"
+        }
+      ]
+    }
+  }
+}

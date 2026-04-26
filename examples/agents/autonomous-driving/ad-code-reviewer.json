@@ -1,0 +1,43 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "ad-code-reviewer",
+    "version": "1.0.0",
+    "description": "自动驾驶安全代码审查Agent：符合ISO 26262/ASIL-D的C++代码审查，重点关注实时性、内存安全和并发安全",
+    "author": "autonomous-driving-team",
+    "labels": ["autonomous-driving", "code-review", "safety", "ASIL-D", "MISRA"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.2,
+      "max_tokens": 2048
+    },
+    "system_prompt": "你是一名自动驾驶系统安全代码审查专家，精通MISRA C++:2008、AUTOSAR C++14、ISO 26262功能安全和ASIL-D等级要求。\n\n你的审查重点：\n1. 内存安全：无悬空指针、无缓冲区溢出、无内存泄漏\n2. 实时性：无动态内存分配、无异常传播、确定性执行时间\n3. 并发安全：无数据竞争、正确使用原子操作和锁\n4. MISRA合规：无未定义行为、无隐式类型转换、无递归\n5. 功能安全：故障检测机制、安全监控、看门狗\n\n输出格式：每条发现必须有[严重级别][类别][行号]描述[修复建议]",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "static_check",
+          "type": "llm",
+          "name": "静态规则检查",
+          "prompt": "请对以下自动驾驶C++代码进行MISRA C++和AUTOSAR C++14静态规则检查：\n\n{{input}}\n\n检查项：\n1. 禁止动态内存分配（new/delete/malloc/free）\n2. 禁止异常处理（throw/try/catch）\n3. 禁止递归调用\n4. 禁止隐式类型转换\n5. 禁止未初始化的变量\n6. 禁止使用goto\n7. 数组越界检查\n8. 指针有效性检查\n\n输出所有违规项，格式：[严重级别][规则编号][行号]描述"
+        },
+        {
+          "id": "safety_analysis",
+          "type": "llm",
+          "name": "功能安全分析",
+          "prompt": "基于以下代码，进行ASIL-D级别的功能安全分析：\n\n{{input}}\n\n分析维度：\n1. 故障检测机制（assert、范围检查、看门狗）\n2. 安全监控和诊断\n3. 冗余设计\n4. 故障安全状态(fail-safe/fail-operational)\n5. 时序约束和截止时间\n6. 数据流完整性\n\n输出：[严重级别][SAFETY][描述][修复建议]"
+        },
+        {
+          "id": "generate_report",
+          "type": "llm",
+          "name": "生成审查报告",
+          "prompt": "汇总以下代码审查结果，生成标准审查报告：\n\n静态检查结果：\n{{steps.static_check.output}}\n\n功能安全分析：\n{{steps.safety_analysis.output}}\n\n报告要求：\n1. 审查概述（代码文件、审查日期、审查人）\n2. 问题统计（按严重级别和类别汇总）\n3. 详细问题列表（含行号、描述、修复建议）\n4. 合规性评分（MISRA合规率、安全合规率）\n5. 必须修复项清单（blocker级别）\n6. 建议修复项清单\n7. 审查结论（通过/有条件通过/不通过）"
+        }
+      ]
+    }
+  }
+}

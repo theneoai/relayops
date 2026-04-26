@@ -1,0 +1,30 @@
+{
+  "apiVersion": "agent.platform/v1",
+  "kind": "Agent",
+  "metadata": {
+    "name": "summarizer",
+    "version": "1.0.0",
+    "description": "文本摘要助手：长文自动提取核心要点",
+    "author": "platform",
+    "labels": ["写作", "摘要"]
+  },
+  "spec": {
+    "model": {
+      "provider": "ollama",
+      "name": "llama3.2",
+      "temperature": 0.3
+    },
+    "system_prompt": "你是一名专业的文本摘要专家。提取文章核心要点，用简洁的语言总结。",
+    "workflow": {
+      "type": "sequential",
+      "steps": [
+        {
+          "id": "summarize",
+          "type": "llm",
+          "name": "生成摘要",
+          "prompt": "请对以下文本生成摘要：\n\n{{input}}\n\n要求：\n1. 提取3-5个核心要点\n2. 每点不超过20字\n3. 最后附上一段100字以内的整体总结"
+        }
+      ]
+    }
+  }
+}

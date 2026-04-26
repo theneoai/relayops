@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Platform</title>
+  <style>
+    *,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+    :root {
+      --primary: #1c64f2;
+      --primary-hover: #1a56db;
+      --primary-light: #e1effe;
+      --success: #10b981;
+      --success-light: #d1fae5;
+      --warning: #f59e0b;
+      --warning-light: #fef3c7;
+      --danger: #ef4444;
+      --danger-light: #fee2e2;
+      --bg: #f9fafb;
+      --surface: #ffffff;
+      --text: #111827;
+      --text-secondary: #6b7280;
+      --text-tertiary: #9ca3af;
+      --border: #e5e7eb;
+      --border-light: #f3f4f6;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -2px rgba(0,0,0,0.04);
+      --radius-sm: 6px;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --llm: #6366f1;
+      --llm-bg: #eef2ff;
+      --tool: #10b981;
+      --tool-bg: #ecfdf5;
+      --condition: #f59e0b;
+      --condition-bg: #fef3c7;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Layout */
+    .app { display: flex; height: 100vh; }
+    .sidebar {
+      width: 64px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 0;
+      z-index: 50;
+    }
+    .sidebar-logo {
+      width: 36px; height: 36px;
+      background: var(--primary);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 16px; font-weight: 700;
+      margin-bottom: 24px;
+      cursor: pointer;
+    }
+    .sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+    .nav-item {
+      width: 48px; height: 44px;
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      font-size: 20px;
+    }
+    .nav-item:hover { background: var(--border-light); color: var(--text-secondary); }
+    .nav-item.active { background: var(--primary-light); color: var(--primary); }
+    .nav-item.active::before {
+      content: ''; position: absolute; left: -16px; top: 50%; transform: translateY(-50%);
+      width: 3px; height: 20px; background: var(--primary); border-radius: 0 3px 3px 0;
+    }
+    .nav-tooltip {
+      position: absolute; left: 56px;
+      background: var(--text); color: white;
+      padding: 6px 12px; border-radius: 6px;
+      font-size: 12px; white-space: nowrap;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .nav-item:hover .nav-tooltip { opacity: 1; }
+    .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
+
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .topbar {
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px;
+      flex-shrink: 0;
+    }
+    .topbar-title { font-size: 16px; font-weight: 600; }
+    .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+    .content { flex: 1; overflow-y: auto; padding: 24px; }
+    .page { display: none; max-width: 1200px; margin: 0 auto; }
+    .page.active { display: block; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: var(--radius-sm);
+      border: none; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border-light); }
+    .btn-success { background: var(--success); color: white; }
+    .btn-ghost { background: transparent; color: var(--text-secondary); }
+    .btn-ghost:hover { background: var(--border-light); color: var(--text); }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .btn-icon { padding: 6px; font-size: 16px; }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-light);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-title { font-size: 14px; font-weight: 600; }
+    .card-body { padding: 20px; }
+
+    /* Grid */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+
+    /* Template Card (Dify style) */
+    .template-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .template-card:hover {
+      border-color: var(--primary);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-1px);
+    }
+    .template-card:hover .template-action { opacity: 1; }
+    .template-icon-wrap {
+      width: 44px; height: 44px;
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; margin-bottom: 14px;
+    }
+    .template-icon-wrap.llm { background: var(--llm-bg); }
+    .template-icon-wrap.tool { background: var(--tool-bg); }
+    .template-icon-wrap.default { background: var(--primary-light); }
+    .template-name { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .template-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .template-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag {
+      font-size: 11px; padding: 3px 10px;
+      border-radius: 20px; background: var(--border-light);
+      color: var(--text-secondary); font-weight: 500;
+    }
+    .template-action {
+      position: absolute; top: 16px; right: 16px;
+      opacity: 0; transition: opacity 0.2s;
+    }
+
+    /* Agent List (Dify Studio style) */
+    .agent-list { display: flex; flex-direction: column; gap: 8px; }
+    .agent-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; background: var(--surface);
+      border-radius: var(--radius); border: 1px solid var(--border);
+      transition: all 0.15s; cursor: pointer;
+    }
+    .agent-row:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+    .agent-row-left { display: flex; align-items: center; gap: 14px; }
+    .agent-row-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; background: var(--primary-light); color: var(--primary);
+    }
+    .agent-row-info { display: flex; flex-direction: column; gap: 2px; }
+    .agent-row-name { font-weight: 600; font-size: 14px; }
+    .agent-row-meta { font-size: 12px; color: var(--text-secondary); }
+    .agent-row-actions { display: flex; gap: 6px; opacity: 0; transition: opacity 0.15s; }
+    .agent-row:hover .agent-row-actions { opacity: 1; }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      display: inline-block; margin-right: 4px;
+    }
+    .status-dot.active { background: var(--success); box-shadow: 0 0 0 2px var(--success-light); }
+    .status-dot.draft { background: var(--warning); }
+
+    /* Workflow Canvas (Dify style) */
+    .workflow-layout { display: grid; grid-template-columns: 1fr 320px; gap: 16px; height: calc(100vh - 104px); }
+    .canvas-area {
+      background: var(--bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: auto;
+      background-image:
+        radial-gradient(circle, var(--border) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    .canvas-toolbar {
+      position: absolute; top: 16px; left: 16px;
+      display: flex; gap: 8px; z-index: 10;
+    }
+    .canvas-toolbtn {
+      padding: 8px 14px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+      box-shadow: var(--shadow-sm); transition: all 0.15s;
+    }
+    .canvas-toolbtn:hover { border-color: var(--primary); color: var(--primary); }
+    .canvas-nodes { padding: 80px 40px 40px; display: flex; flex-direction: column; align-items: center; gap: 0; min-width: 400px; }
+    .wf-node {
+      width: 260px; background: var(--surface);
+      border-radius: var(--radius); border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm); cursor: pointer;
+      transition: all 0.2s; overflow: hidden;
+    }
+    .wf-node:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+    .wf-node.selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+    .wf-node-header {
+      padding: 12px 14px;
+      display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .wf-node-icon {
+      width: 28px; height: 28px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+    .wf-node-icon.llm { background: var(--llm-bg); color: var(--llm); }
+    .wf-node-icon.tool { background: var(--tool-bg); color: var(--tool); }
+    .wf-node-icon.condition { background: var(--condition-bg); color: var(--condition); }
+    .wf-node-title { font-size: 13px; font-weight: 600; }
+    .wf-node-subtitle { font-size: 11px; color: var(--text-tertiary); }
+    .wf-node-body { padding: 12px 14px; font-size: 12px; color: var(--text-secondary); }
+    .wf-connector {
+      width: 2px; height: 28px; background: var(--border);
+      position: relative;
+    }
+    .wf-connector::after {
+      content: ''; position: absolute; bottom: -4px; left: -3px;
+      width: 8px; height: 8px; background: var(--border);
+      border-radius: 50%;
+    }
+    .wf-connector.running::after { background: var(--primary); animation: pulse 1.2s infinite; }
+    .wf-connector.success::after { background: var(--success); }
+
+    /* Properties Panel */
+    .props-panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .props-header {
+      padding: 14px 16px; border-bottom: 1px solid var(--border-light);
+      font-size: 13px; font-weight: 600;
+    }
+    .props-body { padding: 16px; flex: 1; overflow-y: auto; }
+    .prop-group { margin-bottom: 16px; }
+    .prop-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
+    .prop-input {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 13px; outline: none; font-family: inherit;
+    }
+    .prop-input:focus { border-color: var(--primary); }
+    .prop-select {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 13px; outline: none; background: var(--surface);
+    }
+
+    /* Chat / Run Panel (Dify style) */
+    .run-layout { display: grid; grid-template-columns: 1fr 380px; gap: 16px; height: calc(100vh - 104px); }
+    .chat-panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-header {
+      padding: 12px 20px; border-bottom: 1px solid var(--border-light);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .chat-header-avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--primary-light); color: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 600;
+    }
+    .chat-header-info { flex: 1; }
+    .chat-header-name { font-size: 14px; font-weight: 600; }
+    .chat-header-status { font-size: 11px; color: var(--success); display: flex; align-items: center; gap: 4px; }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .msg { display: flex; gap: 10px; max-width: 85%; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .msg-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; flex-shrink: 0;
+    }
+    .msg-avatar.user { background: var(--primary); color: white; }
+    .msg-avatar.bot { background: var(--border-light); }
+    .msg-bubble {
+      padding: 10px 14px; border-radius: 14px;
+      font-size: 14px; line-height: 1.5;
+    }
+    .msg.user .msg-bubble { background: var(--primary); color: white; border-bottom-right-radius: 4px; }
+    .msg.bot .msg-bubble { background: var(--bg); color: var(--text); border-bottom-left-radius: 4px; }
+    .chat-input-wrap {
+      padding: 12px 16px; border-top: 1px solid var(--border-light);
+      display: flex; gap: 8px;
+    }
+    .chat-input {
+      flex: 1; padding: 10px 14px;
+      border: 1px solid var(--border); border-radius: 20px;
+      font-size: 14px; outline: none; background: var(--bg);
+    }
+    .chat-input:focus { border-color: var(--primary); background: var(--surface); }
+    .chat-send {
+      width: 38px; height: 38px; border-radius: 50%;
+      background: var(--primary); color: white; border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 16px; transition: all 0.2s;
+    }
+    .chat-send:hover { background: var(--primary-hover); }
+    .chat-send:disabled { background: var(--text-tertiary); cursor: not-allowed; }
+
+    /* Trace Panel */
+    .trace-panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .trace-list { flex: 1; overflow-y: auto; padding: 12px; }
+    .trace-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px; border-radius: var(--radius-sm);
+      margin-bottom: 6px; transition: background 0.15s;
+    }
+    .trace-item:hover { background: var(--bg); }
+    .trace-icon {
+      width: 24px; height: 24px; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; flex-shrink: 0;
+    }
+    .trace-icon.llm { background: var(--llm-bg); color: var(--llm); }
+    .trace-icon.tool { background: var(--tool-bg); color: var(--tool); }
+    .trace-info { flex: 1; }
+    .trace-name { font-size: 12px; font-weight: 500; }
+    .trace-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+    .trace-status { font-size: 11px; font-weight: 500; }
+    .trace-status.success { color: var(--success); }
+    .trace-status.error { color: var(--danger); }
+    .trace-status.running { color: var(--primary); }
+
+    /* Stats bar */
+    .stats-bar {
+      display: flex; gap: 16px; padding: 12px 16px;
+      border-top: 1px solid var(--border-light);
+      font-size: 12px; color: var(--text-secondary);
+    }
+    .stats-bar span { color: var(--text); font-weight: 500; }
+
+    /* Empty State */
+    .empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+    .empty-title { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+    .empty-desc { font-size: 13px; }
+
+    /* Toast */
+    .toast-container { position: fixed; top: 68px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      padding: 10px 16px; border-radius: var(--radius-sm);
+      color: white; font-size: 13px; animation: slideIn 0.3s ease;
+      max-width: 320px; box-shadow: var(--shadow-lg);
+    }
+    .toast.success { background: var(--success); }
+    .toast.error { background: var(--danger); }
+    .toast.info { background: var(--primary); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Loading */
+    .loading { display: inline-flex; align-items: center; gap: 6px; }
+    .loading-dots::after {
+      content: ''; display: inline-block; width: 14px; height: 14px;
+      border: 2px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 200; opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .modal-overlay.show { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--surface); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg); width: 520px; max-width: 90vw;
+      max-height: 80vh; display: flex; flex-direction: column;
+      transform: scale(0.95); transition: transform 0.2s;
+    }
+    .modal-overlay.show .modal { transform: scale(1); }
+    .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-light); }
+    .modal-title { font-size: 16px; font-weight: 600; }
+    .modal-body { padding: 20px 24px; flex: 1; overflow-y: auto; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-light); display: flex; justify-content: flex-end; gap: 8px; }
+
+    /* Section header */
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .section-title { font-size: 18px; font-weight: 600; }
+    .section-desc { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+    /* Select styled */
+    .styled-select {
+      padding: 8px 32px 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 13px; background: var(--surface); appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 10px center;
+      cursor: pointer; outline: none;
+    }
+    .styled-select:focus { border-color: var(--primary); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-logo" onclick="switchPage('market')">A</div>
+      <nav class="sidebar-nav">
+        <div class="nav-item active" onclick="switchPage('market',this)" title="模板市场">
+          🏪
+          <span class="nav-tooltip">模板市场</span>
+        </div>
+        <div class="nav-item" onclick="switchPage('agents',this)" title="我的 Agent">
+          🤖
+          <span class="nav-tooltip">我的 Agent</span>
+        </div>
+        <div class="nav-item" onclick="switchPage('builder',this)" title="工作流编排">
+          🔧
+          <span class="nav-tooltip">工作流编排</span>
+        </div>
+        <div class="nav-item" onclick="switchPage('run',this)" title="运行测试">
+          ▶️
+          <span class="nav-tooltip">运行测试</span>
+        </div>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="nav-item" onclick="showAbout()" title="关于">
+          ℹ️
+          <span class="nav-tooltip">关于</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topbar-title" id="pageTitle">模板市场</div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary btn-sm" onclick="loadAgents()" id="refreshBtn" style="display:none">🔄 刷新</button>
+          <button class="btn btn-primary btn-sm" onclick="showDeployModal()" id="deployBtn" style="display:none">+ 新建 Agent</button>
+        </div>
+      </header>
+
+      <!-- Content -->
+      <div class="content">
+
+        <!-- Page: Market -->
+        <div class="page active" id="page-market">
+          <div class="section-header">
+            <div>
+              <div class="section-title">模板市场</div>
+              <div class="section-desc">选择一个模板快速创建你的智能体</div>
+            </div>
+          </div>
+          <div class="grid" id="templateGrid"></div>
+        </div>
+
+        <!-- Page: Agents -->
+        <div class="page" id="page-agents">
+          <div class="section-header">
+            <div>
+              <div class="section-title">我的 Agent</div>
+              <div class="section-desc">管理已创建的智能体</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="switchPage('market')">+ 从模板创建</button>
+          </div>
+          <div class="agent-list" id="agentList">
+            <div class="empty">
+              <div class="empty-icon">📭</div>
+              <div class="empty-title">暂无 Agent</div>
+              <div class="empty-desc">去模板市场创建一个吧</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page: Builder -->
+        <div class="page" id="page-builder">
+          <div class="section-header">
+            <div>
+              <div class="section-title">工作流编排</div>
+              <div class="section-desc">拖拽节点构建可视化工作流</div>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="saveWorkflow()">💾 保存</button>
+          </div>
+          <div class="workflow-layout">
+            <div class="canvas-area" id="canvasArea">
+              <div class="canvas-toolbar">
+                <div class="canvas-toolbtn" onclick="addNode('llm')">🧠 LLM</div>
+                <div class="canvas-toolbtn" onclick="addNode('tool')">🔧 工具</div>
+                <div class="canvas-toolbtn" onclick="addNode('condition')">❓ 条件</div>
+                <div class="canvas-toolbtn" onclick="clearCanvas()">🗑️ 清空</div>
+              </div>
+              <div class="canvas-nodes" id="canvasNodes"></div>
+            </div>
+            <div class="props-panel">
+              <div class="props-header">⚙️ 属性配置</div>
+              <div class="props-body" id="propsBody">
+                <div class="empty" style="padding:40px 20px">
+                  <div class="empty-icon">🖱️</div>
+                  <div class="empty-title">选择一个节点</div>
+                  <div class="empty-desc">点击画布上的节点查看和编辑属性</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page: Run -->
+        <div class="page" id="page-run">
+          <div class="section-header">
+            <div>
+              <div class="section-title">运行测试</div>
+              <div class="section-desc">与 Agent 对话并查看执行过程</div>
+            </div>
+            <select class="styled-select" id="agentSelect" style="width:240px" onchange="onAgentChange()">
+              <option value="">-- 选择 Agent --</option>
+            </select>
+          </div>
+          <div class="run-layout">
+            <div class="chat-panel">
+              <div class="chat-header">
+                <div class="chat-header-avatar" id="chatAvatar">🤖</div>
+                <div class="chat-header-info">
+                  <div class="chat-header-name" id="chatName">选择 Agent 开始对话</div>
+                  <div class="chat-header-status" id="chatStatus" style="display:none">
+                    <span class="status-dot active"></span>在线
+                  </div>
+                </div>
+              </div>
+              <div class="chat-messages" id="chatMessages">
+                <div class="empty" style="padding:80px 20px">
+                  <div class="empty-icon">💬</div>
+                  <div class="empty-title">开始对话</div>
+                  <div class="empty-desc">从上方选择一个 Agent，输入问题开始测试</div>
+                </div>
+              </div>
+              <div class="chat-input-wrap">
+                <input type="text" class="chat-input" id="chatInput" placeholder="输入你的问题..." onkeypress="if(event.key==='Enter')sendMessage()" disabled>
+                <button class="chat-send" onclick="sendMessage()" id="sendBtn" disabled>➤</button>
+              </div>
+            </div>
+            <div class="trace-panel">
+              <div class="props-header">📋 执行追踪</div>
+              <div class="trace-list" id="traceList">
+                <div class="empty" style="padding:40px 20px">
+                  <div class="empty-icon">📊</div>
+                  <div class="empty-title">等待执行</div>
+                  <div class="empty-desc">发送消息后，这里会显示每一步的执行详情</div>
+                </div>
+              </div>
+              <div class="stats-bar">
+                <div>状态: <span id="runStatus">-</span></div>
+                <div>耗时: <span id="runLatency">-</span></div>
+                <div>步骤: <span id="runSteps">-</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">提示</div>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-footer" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <script>
+    // ===== 数据 =====
+    const API_BASE = '';
+
+    const TEMPLATES = [
+      { id:'customer-service', name:'智能客服', icon:'🤖', desc:'自动回答客户咨询，支持订单查询、退款处理、产品咨询，情绪识别自动转人工。', tags:['客服','自动回复'], definition:{apiVersion:'agent.platform/v1',kind:'Agent',metadata:{name:'customer-service',version:'1.0.0',description:'智能客服Agent',author:'platform',labels:['客服']},spec:{model:{provider:'ollama',name:'llama3.2',temperature:0.7},system_prompt:'你是一名专业的智能客服助手。帮助客户解决问题，使用中文回复。',workflow:{type:'sequential',steps:[{id:'understand_intent',type:'llm',name:'理解意图',prompt:'分析客户消息，判断意图类别（退款/订单查询/产品咨询/投诉/其他）。只返回JSON：{"intent": "类别", "confidence": 0-1}\n客户消息：{{input}}'},{id:'query_order',type:'tool',name:'查询订单',tool:'order_query',inputs:{order_id:'ORD-001'}},{id:'generate_response',type:'llm',name:'生成回复',prompt:'你是客服助手。\n客户消息：{{input}}\n意图分析：{{steps.understand_intent.output}}\n订单信息：{{steps.query_order.output}}\n请生成专业、礼貌的回复。'}]}}}},
+      { id:'weather-assistant', name:'天气助手', icon:'🌤️', desc:'查询任意城市的天气情况，自动生成人性化的天气播报文案。', tags:['工具','查询'], definition:{apiVersion:'agent.platform/v1',kind:'Agent',metadata:{name:'weather-assistant',version:'1.0.0',description:'天气查询助手',author:'platform',labels:['工具']},spec:{model:{provider:'ollama',name:'llama3.2',temperature:0.5},system_prompt:'你是一个天气助手。根据用户查询的城市，调用天气工具获取信息，然后用友好的语气告诉用户。',workflow:{type:'sequential',steps:[{id:'get_weather',type:'tool',name:'获取天气',tool:'weather_query',inputs:{city:'{{input}}'}},{id:'reply',type:'llm',name:'生成播报',prompt:'用户查询城市：{{input}}\n天气数据：{{steps.get_weather.output}}\n请生成友好的天气播报。'}]}}}},
+      { id:'email-writer', name:'邮件撰写', icon:'✉️', desc:'根据主题和要点自动生成正式商务邮件，支持多种语气风格。', tags:['写作','办公'], definition:{apiVersion:'agent.platform/v1',kind:'Agent',metadata:{name:'email-writer',version:'1.0.0',description:'邮件撰写助手',author:'platform',labels:['写作']},spec:{model:{provider:'ollama',name:'llama3.2',temperature:0.7},system_prompt:'你是一名专业的商务邮件撰写专家。根据用户提供的信息，生成正式、得体的商务邮件。',workflow:{type:'sequential',steps:[{id:'write_email',type:'llm',name:'撰写邮件',prompt:'请根据以下信息撰写一封商务邮件：\n{{input}}\n\n要求：\n1. 格式规范（称谓、正文、祝颂语、署名）\n2. 语气正式但友好\n3. 简洁明了，不啰嗦'}]}}}},
+      { id:'code-reviewer', name:'代码审查', icon:'💻', desc:'自动审查代码，发现潜在Bug、性能问题和安全漏洞，给出修改建议。', tags:['开发','代码'], definition:{apiVersion:'agent.platform/v1',kind:'Agent',metadata:{name:'code-reviewer',version:'1.0.0',description:'代码审查助手',author:'platform',labels:['开发']},spec:{model:{provider:'ollama',name:'llama3.2',temperature:0.2},system_prompt:'你是一名资深代码审查专家。审查代码时关注：Bug、性能、安全、可读性、最佳实践。',workflow:{type:'sequential',steps:[{id:'review',type:'llm',name:'审查代码',prompt:'请审查以下代码，从以下维度分析：\n1. 潜在Bug\n2. 性能问题\n3. 安全隐患\n4. 可读性建议\n5. 最佳实践\n\n代码：\n```\n{{input}}\n```\n\n请用中文回复，按严重程度排序。'}]}}}},
+      { id:'data-analyzer', name:'数据分析', icon:'📊', desc:'自动分析表格数据，生成统计摘要、趋势分析和可视化建议。', tags:['数据','分析'], definition:{apiVersion:'agent.platform/v1',kind:'Agent',metadata:{name:'data-analyzer',version:'1.0.0',description:'数据分析助手',author:'platform',labels:['数据']},spec:{model:{provider:'ollama',name:'llama3.2',temperature:0.3},system_prompt:'你是一名数据分析师。帮助用户理解数据，提取关键洞察。',workflow:{type:'sequential',steps:[{id:'analyze',type:'llm',name:'分析数据',prompt:'请分析以下数据，提供：\n1. 关键统计指标\n2. 趋势分析\n3. 异常点识别\n4. 可执行的洞察\n\n数据：\n{{input}}'}]}}}},
+      { id:'translator', name:'智能翻译', icon:'🌐', desc:'支持多语言互译，保持专业术语准确性，支持技术文档和商务邮件翻译。', tags:['翻译','语言'], definition:{apiVersion:'agent.platform/v1',kind:'Agent',metadata:{name:'translator',version:'1.0.0',description:'智能翻译助手',author:'platform',labels:['翻译']},spec:{model:{provider:'ollama',name:'llama3.2',temperature:0.2},system_prompt:'你是一名专业翻译。准确翻译用户输入的内容，保持原文语气和专业术语。',workflow:{type:'sequential',steps:[{id:'translate',type:'llm',name:'翻译',prompt:'请将以下内容翻译成中文（如果是中文则翻译成英文）：\n\n{{input}}\n\n要求：\n1. 准确传达原意\n2. 保持专业术语准确\n3. 语言自然流畅'}]}}}}
+    ];
+
+    let selectedNode = null;
+    let workflowNodes = [];
+
+    // ===== 页面切换 =====
+    const PAGE_TITLES = { market:'模板市场', agents:'我的 Agent', builder:'工作流编排', run:'运行测试' };
+    function switchPage(page, btn) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      document.getElementById('page-' + page).classList.add('active');
+      if (btn) btn.classList.add('active');
+      else document.querySelectorAll('.nav-item')[Object.keys(PAGE_TITLES).indexOf(page)].classList.add('active');
+      document.getElementById('pageTitle').textContent = PAGE_TITLES[page];
+      document.getElementById('refreshBtn').style.display = page === 'agents' ? 'flex' : 'none';
+      document.getElementById('deployBtn').style.display = page === 'agents' ? 'flex' : 'none';
+      if (page === 'agents') loadAgents();
+      if (page === 'run') loadAgentSelect();
+      if (page === 'builder') renderCanvas();
+    }
+
+    // ===== Toast =====
+    function showToast(message, type) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'toast ' + type;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    // ===== Modal =====
+    function showModal(title, body, footer) {
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('modalBody').innerHTML = body;
+      document.getElementById('modalFooter').innerHTML = footer || '<button class="btn btn-secondary" onclick="closeModal()">关闭</button>';
+      document.getElementById('modalOverlay').classList.add('show');
+    }
+    function closeModal(e) {
+      if (!e || e.target === document.getElementById('modalOverlay')) {
+        document.getElementById('modalOverlay').classList.remove('show');
+      }
+    }
+    function showAbout() {
+      showModal('关于 Agent Platform',
+        '<p style="margin-bottom:12px;font-size:14px;color:var(--text-secondary);line-height:1.6">Agent Platform 是一个开源的智能体平台，让非技术用户也能通过可视化界面创建、编排和运行 AI Agent。</p>' +
+        '<p style="font-size:13px;color:var(--text-tertiary)">版本: v0.1.0 | 后端 API: /api/v1</p>',
+        '<button class="btn btn-secondary" onclick="closeModal()">关闭</button>'
+      );
+    }
+
+    // ===== 模板市场 =====
+    function renderTemplates() {
+      const grid = document.getElementById('templateGrid');
+      grid.innerHTML = TEMPLATES.map(t => {
+        const iconClass = t.id.includes('weather') || t.id.includes('tool') ? 'tool' : 'default';
+        return '<div class="template-card" onclick="deployTemplate(\'' + t.id + '\')">' +
+          '<div class="template-action"><button class="btn btn-primary btn-sm">一键部署</button></div>' +
+          '<div class="template-icon-wrap ' + iconClass + '">' + t.icon + '</div>' +
+          '<div class="template-name">' + t.name + '</div>' +
+          '<div class="template-desc">' + t.desc + '</div>' +
+          '<div class="template-tags">' + t.tags.map(tag => '<span class="tag">' + tag + '</span>').join('') + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    async function deployTemplate(templateId) {
+      const template = TEMPLATES.find(t => t.id === templateId);
+      if (!template) return;
+      showToast('正在部署「' + template.name + '」...', 'info');
+      try {
+        const res = await fetch(API_BASE + '/api/v1/agents', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(template.definition)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast('「' + template.name + '」部署成功！', 'success');
+          setTimeout(() => switchPage('agents'), 800);
+        } else {
+          showToast('部署失败：' + (data.error || '未知错误'), 'error');
+        }
+      } catch (err) {
+        showToast('网络错误：' + err.message, 'error');
+      }
+    }
+
+    function showDeployModal() {
+      showModal('选择模板',
+        '<div class="grid" style="grid-template-columns:1fr 1fr">' +
+        TEMPLATES.map(t => '<div class="template-card" style="padding:14px" onclick="closeModal();deployTemplate(\'' + t.id + '\')">' +
+          '<div class="template-icon-wrap default" style="width:36px;height:36px;font-size:18px;margin-bottom:8px">' + t.icon + '</div>' +
+          '<div class="template-name" style="font-size:13px">' + t.name + '</div>' +
+          '</div>').join('') +
+        '</div>'
+      );
+    }
+
+    // ===== Agent 列表 =====
+    async function loadAgents() {
+      const container = document.getElementById('agentList');
+      try {
+        const res = await fetch(API_BASE + '/api/v1/agents');
+        const data = await res.json();
+        if (!data.agents || data.agents.length === 0) {
+          container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-title">暂无 Agent</div><div class="empty-desc">去模板市场创建一个吧</div></div>';
+          return;
+        }
+        container.innerHTML = data.agents.map(a => '<div class="agent-row">' +
+          '<div class="agent-row-left">' +
+            '<div class="agent-row-icon">🤖</div>' +
+            '<div class="agent-row-info">' +
+              '<div class="agent-row-name">' + a.name + '</div>' +
+              '<div class="agent-row-meta">' + (a.description || '无描述') + ' · v' + a.version + ' · <span class="status-dot ' + (a.status === 'active' ? 'active' : 'draft') + '"></span>' + a.status + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="agent-row-actions">' +
+            '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();quickRun(\'' + a.name + '\')">▶️ 运行</button>' +
+            '<button class="btn btn-ghost btn-icon" onclick="event.stopPropagation();deleteAgent(\'' + a.name + '\')">🗑️</button>' +
+          '</div>' +
+        '</div>').join('');
+      } catch (err) {
+        container.innerHTML = '<div class="empty"><div class="empty-icon">❌</div><div class="empty-title">加载失败</div><div class="empty-desc">' + err.message + '</div></div>';
+      }
+    }
+
+    async function deleteAgent(name) {
+      if (!confirm('确定要删除 Agent「' + name + '」吗？')) return;
+      try {
+        await fetch(API_BASE + '/api/v1/agents/' + name, { method: 'DELETE' });
+        showToast('删除成功', 'success');
+        loadAgents();
+      } catch (err) {
+        showToast('删除失败', 'error');
+      }
+    }
+
+    function quickRun(name) {
+      switchPage('run');
+      document.getElementById('agentSelect').value = name;
+      onAgentChange();
+    }
+
+    // ===== 运行测试 =====
+    async function loadAgentSelect() {
+      try {
+        const res = await fetch(API_BASE + '/api/v1/agents');
+        const data = await res.json();
+        const select = document.getElementById('agentSelect');
+        const current = select.value;
+        select.innerHTML = '<option value="">-- 选择 Agent --</option>' +
+          (data.agents || []).map(a => '<option value="' + a.name + '">' + a.name + '</option>').join('');
+        if (current) select.value = current;
+      } catch (err) {}
+    }
+
+    function onAgentChange() {
+      const name = document.getElementById('agentSelect').value;
+      const chatName = document.getElementById('chatName');
+      const chatStatus = document.getElementById('chatStatus');
+      const chatAvatar = document.getElementById('chatAvatar');
+      const input = document.getElementById('chatInput');
+      const sendBtn = document.getElementById('sendBtn');
+      const messages = document.getElementById('chatMessages');
+
+      if (!name) {
+        chatName.textContent = '选择 Agent 开始对话';
+        chatStatus.style.display = 'none';
+        chatAvatar.textContent = '🤖';
+        input.disabled = true; sendBtn.disabled = true;
+        messages.innerHTML = '<div class="empty" style="padding:80px 20px"><div class="empty-icon">💬</div><div class="empty-title">开始对话</div><div class="empty-desc">从上方选择一个 Agent，输入问题开始测试</div></div>';
+        return;
+      }
+      chatName.textContent = name;
+      chatStatus.style.display = 'flex';
+      chatAvatar.textContent = name.charAt(0).toUpperCase();
+      input.disabled = false; sendBtn.disabled = false;
+      messages.innerHTML = '';
+      input.focus();
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const agentName = document.getElementById('agentSelect').value;
+      const messagesDiv = document.getElementById('chatMessages');
+      const sendBtn = document.getElementById('sendBtn');
+      const traceList = document.getElementById('traceList');
+
+      if (!agentName || !input.value.trim()) return;
+      const userText = input.value.trim();
+      input.value = '';
+
+      messagesDiv.innerHTML += '<div class="msg user"><div class="msg-avatar user">👤</div><div class="msg-bubble">' + escapeHtml(userText) + '</div></div>';
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+      const loadingId = 'loading-' + Date.now();
+      messagesDiv.innerHTML += '<div class="msg bot" id="' + loadingId + '"><div class="msg-avatar bot">🤖</div><div class="msg-bubble"><span class="loading-dots">思考中</span></div></div>';
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+      sendBtn.disabled = true;
+      document.getElementById('runStatus').textContent = '运行中';
+      document.getElementById('runStatus').style.color = 'var(--primary)';
+      document.getElementById('runLatency').textContent = '-';
+      document.getElementById('runSteps').textContent = '-';
+      traceList.innerHTML = '';
+
+      const startTime = Date.now();
+
+      try {
+        const res = await fetch(API_BASE + '/api/v1/agents/' + agentName + '/execute', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: userText })
+        });
+        const data = await res.json();
+        const latency = Date.now() - startTime;
+
+        document.getElementById(loadingId).remove();
+
+        const responseText = data.response || '（无文本回复）';
+        messagesDiv.innerHTML += '<div class="msg bot"><div class="msg-avatar bot">🤖</div><div class="msg-bubble">' + escapeHtml(responseText) + '</div></div>';
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        document.getElementById('runStatus').textContent = data.status;
+        document.getElementById('runStatus').style.color = data.status === 'success' ? 'var(--success)' : 'var(--danger)';
+        document.getElementById('runLatency').textContent = latency + 'ms';
+        document.getElementById('runSteps').textContent = (data.steps || []).length;
+
+        traceList.innerHTML = (data.steps || []).map((s, i) =>
+          '<div class="trace-item">' +
+            '<div class="trace-icon ' + s.type + '">' + (s.type === 'llm' ? '🧠' : s.type === 'tool' ? '🔧' : '⚡') + '</div>' +
+            '<div class="trace-info"><div class="trace-name">' + s.node + '</div><div class="trace-meta">' + s.type + ' · ' + s.latency_ms + 'ms</div></div>' +
+            '<div class="trace-status ' + s.status + '">' + (s.status === 'success' ? '✓' : s.status === 'running' ? '●' : '✗') + '</div>' +
+          '</div>'
+        ).join('');
+      } catch (err) {
+        document.getElementById(loadingId).remove();
+        messagesDiv.innerHTML += '<div class="msg bot"><div class="msg-avatar bot">⚠️</div><div class="msg-bubble" style="color:var(--danger)">执行出错：' + escapeHtml(err.message) + '</div></div>';
+        document.getElementById('runStatus').textContent = '失败';
+        document.getElementById('runStatus').style.color = 'var(--danger)';
+      }
+      sendBtn.disabled = false;
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    // ===== 工作流编排 =====
+    function renderCanvas() {
+      const canvas = document.getElementById('canvasNodes');
+      if (workflowNodes.length === 0) {
+        workflowNodes = [
+          { id: 'n1', type: 'llm', name: '理解意图', prompt: '分析用户输入的意图...' },
+          { id: 'n2', type: 'tool', name: '查询数据', tool: 'order_query' },
+          { id: 'n3', type: 'llm', name: '生成回复', prompt: '基于查询结果生成回复...' }
+        ];
+      }
+      let html = '';
+      workflowNodes.forEach((node, i) => {
+        const iconMap = { llm:'🧠', tool:'🔧', condition:'❓' };
+        html += '<div class="wf-node ' + (selectedNode === node.id ? 'selected' : '') + '" onclick="selectNode(\'' + node.id + '\')">' +
+          '<div class="wf-node-header">' +
+            '<div class="wf-node-icon ' + node.type + '">' + iconMap[node.type] + '</div>' +
+            '<div><div class="wf-node-title">' + node.name + '</div><div class="wf-node-subtitle">' + node.type.toUpperCase() + '</div></div>' +
+          '</div>' +
+          '<div class="wf-node-body">' + (node.prompt || node.tool || '点击配置节点属性') + '</div>' +
+        '</div>';
+        if (i < workflowNodes.length - 1) {
+          html += '<div class="wf-connector"></div>';
+        }
+      });
+      canvas.innerHTML = html;
+    }
+
+    function selectNode(id) {
+      selectedNode = id;
+      renderCanvas();
+      const node = workflowNodes.find(n => n.id === id);
+      if (!node) return;
+      const iconMap = { llm:'🧠', tool:'🔧', condition:'❓' };
+      document.getElementById('propsBody').innerHTML =
+        '<div class="prop-group"><div class="prop-label">节点名称</div><input class="prop-input" value="' + node.name + '" onchange="updateNode(\'' + id + '\',\'name\',this.value)"></div>' +
+        '<div class="prop-group"><div class="prop-label">节点类型</div><div style="font-size:13px;padding:8px 0">' + iconMap[node.type] + ' ' + node.type.toUpperCase() + '</div></div>' +
+        (node.type === 'llm' || node.type === 'condition'
+          ? '<div class="prop-group"><div class="prop-label">Prompt</div><textarea class="prop-input" rows="6" onchange="updateNode(\'' + id + '\',\'prompt\',this.value)">' + (node.prompt || '') + '</textarea></div>'
+          : '<div class="prop-group"><div class="prop-label">工具名称</div><input class="prop-input" value="' + (node.tool || '') + '" onchange="updateNode(\'' + id + '\',\'tool\',this.value)"></div>') +
+        '<div class="prop-group" style="margin-top:20px"><button class="btn btn-danger btn-sm btn-block" onclick="removeNode(\'' + id + '\')" style="width:100%;background:var(--danger-light);color:var(--danger);border:1px solid var(--danger-light)">删除节点</button></div>';
+    }
+
+    function updateNode(id, field, value) {
+      const node = workflowNodes.find(n => n.id === id);
+      if (node) node[field] = value;
+    }
+
+    function removeNode(id) {
+      workflowNodes = workflowNodes.filter(n => n.id !== id);
+      selectedNode = null;
+      renderCanvas();
+      document.getElementById('propsBody').innerHTML = '<div class="empty" style="padding:40px 20px"><div class="empty-icon">🖱️</div><div class="empty-title">选择一个节点</div><div class="empty-desc">点击画布上的节点查看和编辑属性</div></div>';
+    }
+
+    function addNode(type) {
+      const id = 'n' + (Date.now());
+      const names = { llm:'LLM 节点', tool:'工具节点', condition:'条件节点' };
+      workflowNodes.push({ id, type, name: names[type], prompt: type === 'llm' ? '' : undefined, tool: type === 'tool' ? '' : undefined });
+      renderCanvas();
+      selectNode(id);
+      showToast('已添加 ' + names[type], 'info');
+    }
+
+    function clearCanvas() {
+      if (!confirm('确定要清空画布吗？')) return;
+      workflowNodes = [];
+      selectedNode = null;
+      renderCanvas();
+      document.getElementById('propsBody').innerHTML = '<div class="empty" style="padding:40px 20px"><div class="empty-icon">🖱️</div><div class="empty-title">选择一个节点</div><div class="empty-desc">点击画布上的节点查看和编辑属性</div></div>';
+    }
+
+    function saveWorkflow() {
+      showToast('工作流已保存（MVP简化版：仅前端展示）', 'success');
+    }
+
+    // ===== 工具函数 =====
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ===== 初始化 =====
+    renderTemplates();
+    loadAgentSelect();
+  </script>
+</body>
+</html>
