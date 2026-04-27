@@ -292,25 +292,25 @@ app.post('/api/v1/knowledge/search', async (req: Request, res: Response) => {
 
     let results: any[] = [];
 
-    // 1. 向量语义搜索（如果启用pgvector）
+    // 1. 向量语义搜索（如果启用pgvector，使用参数化查询避免字符串插值）
     if (use_vector) {
       try {
         const queryVec = vecToSql(textToEmbedding(cleanQuery));
         const vecSql = document_id
           ? `SELECT kc.id, kc.document_id, kd.title, kc.content, kc.chunk_index,
-                    1 - (kc.embedding <=> '${queryVec}'::vector) AS score
+                    1 - (kc.embedding <=> $1::vector) AS score
              FROM knowledge_chunks kc
              JOIN knowledge_documents kd ON kc.document_id = kd.id
-             WHERE kc.document_id = $1
-             ORDER BY kc.embedding <=> '${queryVec}'::vector
-             LIMIT $2`
+             WHERE kc.document_id = $2
+             ORDER BY kc.embedding <=> $1::vector
+             LIMIT $3`
           : `SELECT kc.id, kc.document_id, kd.title, kc.content, kc.chunk_index,
-                    1 - (kc.embedding <=> '${queryVec}'::vector) AS score
+                    1 - (kc.embedding <=> $1::vector) AS score
              FROM knowledge_chunks kc
              JOIN knowledge_documents kd ON kc.document_id = kd.id
-             ORDER BY kc.embedding <=> '${queryVec}'::vector
-             LIMIT $1`;
-        const vecParams = document_id ? [document_id, searchLimit] : [searchLimit];
+             ORDER BY kc.embedding <=> $1::vector
+             LIMIT $2`;
+        const vecParams = document_id ? [queryVec, document_id, searchLimit] : [queryVec, searchLimit];
         const vecResult = await pool.query(vecSql, vecParams);
         results = vecResult.rows.map(r => ({ ...r, score: parseFloat(r.score)?.toFixed(4), source: 'vector' }));
       } catch (vecErr: any) {
@@ -359,14 +359,14 @@ app.post('/api/v1/knowledge/ask', async (req: Request, res: Response) => {
     const { question, document_id, top_k = 3 } = req.body;
     if (!question) return res.status(400).json({ error: 'question is required' });
 
-    // 1. 混合检索（向量优先）
+    // 1. 混合检索（向量优先，参数化查询）
     const queryVec = vecToSql(textToEmbedding(question));
     let searchResult: any;
     try {
       const vecSql = document_id
-        ? `SELECT kc.content FROM knowledge_chunks kc WHERE kc.document_id = $1 ORDER BY kc.embedding <=> '${queryVec}'::vector LIMIT $2`
-        : `SELECT kc.content FROM knowledge_chunks kc ORDER BY kc.embedding <=> '${queryVec}'::vector LIMIT $1`;
-      searchResult = await pool.query(vecSql, document_id ? [document_id, top_k] : [top_k]);
+        ? `SELECT kc.content FROM knowledge_chunks kc WHERE kc.document_id = $2 ORDER BY kc.embedding <=> $1::vector LIMIT $3`
+        : `SELECT kc.content FROM knowledge_chunks kc ORDER BY kc.embedding <=> $1::vector LIMIT $2`;
+      searchResult = await pool.query(vecSql, document_id ? [queryVec, document_id, top_k] : [queryVec, top_k]);
     } catch {
       const tsquery = question.split(/\s+/).filter(Boolean).join(' & ');
       const ftsSql = document_id
@@ -604,7 +604,7 @@ async function initSchedulerTables() {
   `);
 }
 
-app.listen(PORT, '0.0.0.0', async () => {
+const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🔧 DevKit API running on port ${PORT}`);
   try {
     await initKnowledgeTables();
@@ -616,3 +616,15 @@ app.listen(PORT, '0.0.0.0', async () => {
   }
   setTimeout(seedAgents, 2000);
 });
+
+async function shutdown() {
+  server.close(async () => {
+    await taskWorker.close();
+    await taskQueue.close();
+    redisConnection.disconnect();
+    await pool.end();
+    process.exit(0);
+  });
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

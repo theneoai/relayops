@@ -101,15 +101,23 @@ const BUILT_IN_TOOLS: Record<string, (inputs: any) => Promise<any>> = {
     return { query, results, total: results.length, source: 'mock_search' };
   },
 
-  // 计算器
+  // 计算器（使用 Function 构造函数 + 严格字符白名单，避免 eval 风险）
   calculator: async (inputs: { expression: string }) => {
     const expr = inputs.expression || '';
     try {
-      // 安全计算：只允许数字和基本运算符
-      const sanitized = expr.replace(/[^0-9+\-*/().\s]/g, '');
-      // eslint-disable-next-line no-eval
-      const result = eval(sanitized);
-      return { expression: expr, result, sanitized, status: 'success' };
+      // 只允许数字、基本运算符和括号，不允许任何字母（防止函数调用或变量注入）
+      const sanitized = expr.replace(/\s/g, '');
+      if (!/^[\d+\-*/.()%]+$/.test(sanitized)) {
+        throw new Error('Expression contains invalid characters');
+      }
+      // 无字母 = 无函数调用、无关键字，Function 构造在此场景安全
+      // eslint-disable-next-line no-new-func
+      const fn = new Function(`"use strict"; return (${sanitized});`);
+      const result = fn() as number;
+      if (typeof result !== 'number' || !isFinite(result)) {
+        throw new Error('Expression did not produce a finite number');
+      }
+      return { expression: expr, result, status: 'success' };
     } catch (err: any) {
       return { expression: expr, error: err.message, status: 'error' };
     }
@@ -260,6 +268,9 @@ app.get('/api/v1/tools', async (_req: Request, res: Response) => {
   }
 });
 
+// 返回数据是模拟数据的工具集合
+const MOCK_TOOLS = new Set(['weather_query', 'order_query', 'exchange_rate', 'send_email', 'search', 'file_ops']);
+
 // ── 调用工具 ──
 app.post('/api/v1/tools/:name/invoke', async (req: Request, res: Response) => {
   const toolName = req.params.name;
@@ -274,7 +285,8 @@ app.post('/api/v1/tools/:name/invoke', async (req: Request, res: Response) => {
         tool: toolName,
         result,
         latency_ms: Date.now() - startTime,
-        source: 'built_in'
+        source: 'built_in',
+        ...(MOCK_TOOLS.has(toolName) && { mock: true, note: 'This tool returns simulated data. Replace with a real integration for production use.' })
       });
     }
 
@@ -307,7 +319,16 @@ app.post('/api/v1/tools/:name/invoke', async (req: Request, res: Response) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔧 Tool Service running on port ${PORT}`);
   console.log(`   Built-in tools:`, Object.keys(BUILT_IN_TOOLS));
 });
+
+async function shutdown() {
+  server.close(async () => {
+    await pool.end();
+    process.exit(0);
+  });
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

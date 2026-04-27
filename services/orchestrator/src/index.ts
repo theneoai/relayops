@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import morgan from 'morgan';
 import { Pool } from 'pg';
-import { createClient } from 'redis';
+import IORedis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { Langfuse } from 'langfuse-node';
 
@@ -12,10 +12,11 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:changeme@postgres:5432/agent_platform'
 });
 
-const redis = createClient({
-  url: process.env.REDIS_URL || 'redis://redis:6379/0'
+const redis = new IORedis(process.env.REDIS_URL || 'redis://redis:6379/0', {
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+  lazyConnect: false
 });
-redis.connect().catch(console.error);
 
 const LLM_GATEWAY_URL = process.env.LLM_GATEWAY_URL || 'http://litellm:4000';
 
@@ -30,6 +31,15 @@ const DEVKIT_API_URL = process.env.DEVKIT_API_URL || 'http://devkit-api:8080';
 
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
+
+// ── 条件求值（修复：明确处理布尔字符串，避免运算符优先级问题）──
+function evaluateCondition(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  if (v === 'true' || v === '1' || v === 'yes') return true;
+  if (v === 'false' || v === '0' || v === 'no' || v === '') return false;
+  // 非空、非明确假值的字符串视为 true（例如模板渲染后有内容）
+  return v !== 'null' && v !== 'undefined' && v !== 'nan';
+}
 
 // ── 健康检查 ──
 app.get('/health', async (_req: Request, res: Response) => {
@@ -139,8 +149,8 @@ async function executeStep(
       }
 
       case 'condition': {
-        const conditionValue = renderedStep.condition || 'true';
-        const isTrue = conditionValue === 'true' || conditionValue.trim() !== '' && conditionValue !== 'false';
+        const conditionValue = renderedStep.condition || 'false';
+        const isTrue = evaluateCondition(conditionValue);
         output = { condition_result: isTrue, matched_branch: isTrue ? 'then' : 'else' };
         break;
       }
@@ -184,10 +194,11 @@ async function executeSteps(
   results: StepResult[]
 ): Promise<void> {
   for (const step of steps) {
-    await redis.setEx(`execution:${executionId}:state`, 3600, JSON.stringify({ context, steps: results }));
+    await redis.setex(`execution:${executionId}:state`, 3600, JSON.stringify({ context, steps: results }));
 
     if (step.type === 'parallel') {
-      // 并行执行多个分支
+      const parallelStart = Date.now();
+      const parallelStartedAt = new Date().toISOString();
       const branches = step.branches || [];
       const branchResults = await Promise.all(
         branches.map(async (branch: any, idx: number) => {
@@ -208,22 +219,22 @@ async function executeSteps(
         type: 'parallel',
         status: 'success',
         output: { branches: branchResults },
-        started_at: new Date().toISOString(),
+        started_at: parallelStartedAt,
         completed_at: new Date().toISOString(),
-        latency_ms: 0
+        latency_ms: Date.now() - parallelStart
       });
       continue;
     }
 
     if (step.type === 'loop') {
-      // 循环执行：condition为true时继续
+      const loopStart = Date.now();
+      const loopStartedAt = new Date().toISOString();
       const maxIterations = step.max_iterations || 10;
       const loopResults: StepResult[] = [];
       let iteration = 0;
       for (iteration = 0; iteration < maxIterations; iteration++) {
         const conditionVal = renderTemplate(step.condition || 'false', context);
-        const shouldContinue = conditionVal === 'true' || conditionVal.trim() !== '' && conditionVal !== 'false';
-        if (!shouldContinue) break;
+        if (!evaluateCondition(conditionVal)) break;
 
         const loopSteps = step.steps || [];
         for (const ls of loopSteps) {
@@ -240,9 +251,9 @@ async function executeSteps(
         type: 'loop',
         status: 'success',
         output: { iterations: iteration, loop_results: loopResults },
-        started_at: new Date().toISOString(),
+        started_at: loopStartedAt,
         completed_at: new Date().toISOString(),
-        latency_ms: 0
+        latency_ms: Date.now() - loopStart
       });
       continue;
     }
@@ -485,6 +496,16 @@ app.post('/api/v1/agents/:name/execute', async (req: Request, res: Response) => 
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`⚙️ Orchestrator running on port ${PORT}`);
 });
+
+async function shutdown() {
+  server.close(async () => {
+    await pool.end();
+    redis.disconnect();
+    process.exit(0);
+  });
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

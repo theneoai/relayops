@@ -3,6 +3,26 @@ import morgan from 'morgan';
 import jwt from 'jsonwebtoken';
 import path from 'path';
 
+// ── 简单内存速率限制器 ──
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+function rateLimit(windowMs: number, max: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const key = req.ip || 'unknown';
+    const now = Date.now();
+    const entry = rateLimitStore.get(key);
+    if (!entry || now > entry.resetAt) {
+      rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    if (entry.count >= max) {
+      res.setHeader('Retry-After', Math.ceil((entry.resetAt - now) / 1000));
+      return res.status(429).json({ error: 'Too many requests' });
+    }
+    entry.count++;
+    next();
+  };
+}
+
 const app = express();
 const PORT = parseInt(process.env.PORT || '8000');
 const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
@@ -36,6 +56,32 @@ function resolveTarget(path: string): string | null {
 
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
+
+// ── 安全响应头 ──
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.removeHeader('X-Powered-By');
+  next();
+});
+
+// ── CORS ──
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '*').split(',').map(s => s.trim());
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin || '';
+  if (ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGINS.includes('*') ? '*' : origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  }
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  next();
+});
+
+// ── 速率限制（API路径：每分钟200次）──
+app.use('/api/', rateLimit(60_000, 200));
 
 // ── 健康检查 ──
 app.get('/health', async (_req: Request, res: Response) => {
@@ -104,7 +150,8 @@ app.use(authMiddleware);
 // ── 手动路由代理（更可控）──
 async function proxyRequest(req: Request, res: Response, targetBase: string) {
   try {
-    const targetUrl = `${targetBase}${req.path}`;
+    // 使用 req.url 保留查询参数（req.path 会丢失 ?page=1&status=... 等参数）
+    const targetUrl = `${targetBase}${req.url}`;
     const headers: Record<string, string> = {
       'Content-Type': req.headers['content-type'] || 'application/json',
     };
@@ -198,7 +245,13 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: 'Internal gateway error' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 API Gateway running on port ${PORT}`);
   console.log(`   Routes configured for:`, ['/api/v1/agents', '/api/v1/executions', '/api/v1/llm', '/api/v1/tools']);
 });
+
+function shutdown() {
+  server.close(() => process.exit(0));
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

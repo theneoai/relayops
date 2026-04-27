@@ -39,26 +39,47 @@ CREATE TABLE IF NOT EXISTS workflow_executions (
 );
 
 -- 知识库文档（增强版：支持向量检索）
+-- 注意：devkit-api 运行时也会执行 CREATE TABLE IF NOT EXISTS，以 SERIAL 主键覆盖；
+-- 此处与运行时建表保持一致，均采用 SERIAL 整型主键。
 CREATE TABLE IF NOT EXISTS knowledge_documents (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id SERIAL PRIMARY KEY,
     title VARCHAR(256) NOT NULL,
     content TEXT NOT NULL,
     source VARCHAR(128),
     tags TEXT[],
     chunk_count INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 知识库文档分块（向量版）
 CREATE TABLE IF NOT EXISTS knowledge_chunks (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    document_id UUID NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+    id SERIAL PRIMARY KEY,
+    document_id INTEGER NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
     -- pgvector 向量字段（384维，适配常见embedding模型）
     embedding vector(384),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(document_id, chunk_index)
+);
+
+-- 定时任务表（BullMQ集成，与 devkit-api 运行时建表保持一致）
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    agent_name VARCHAR(128) NOT NULL,
+    input JSONB NOT NULL,
+    schedule_type VARCHAR(32) NOT NULL,
+    schedule_config JSONB DEFAULT '{}',
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    run_count INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    fail_count INTEGER NOT NULL DEFAULT 0,
+    last_run_at TIMESTAMPTZ,
+    next_run_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 向量索引（HNSW，高性能近似最近邻搜索）
